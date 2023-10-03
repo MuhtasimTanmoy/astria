@@ -1,7 +1,10 @@
 //! The driver is the top-level coordinator that runs and manages all the components
 //! necessary for this reader.
 
-use std::fmt;
+use std::{
+    fmt,
+    time::Duration,
+};
 
 use astria_sequencer_types::SequencerBlockData;
 use color_eyre::eyre::{
@@ -28,6 +31,7 @@ use tokio::{
     task::JoinHandle,
 };
 use tracing::{
+    error,
     info,
     instrument,
     span,
@@ -35,6 +39,7 @@ use tracing::{
     Instrument,
     Level,
 };
+use tryhard;
 
 use crate::{
     block_verifier::BlockVerifier,
@@ -151,9 +156,9 @@ impl Driver {
 
         info!("Starting driver event loop.");
         let mut new_blocks = self
-            .get_new_block_stream()
+            .get_new_block_stream_with_retry()
             .await
-            .wrap_err("failed subscribing to sequencer to receive new blocks")?;
+            .wrap_err("initial websocket connection failed")?;
         // FIXME(https://github.com/astriaorg/astria/issues/381): the event handlers
         // here block the select loop because they `await` their return.
         loop {
@@ -162,11 +167,15 @@ impl Driver {
                     if let Some(block) = new_block {
                         self.handle_new_block(block).await
                     } else {
-                        warn!("sequencer new-block subscription closed; restarting");
-                        match self.get_new_block_stream().await {
+                        warn!("sequencer websocket connection closed; restarting");
+                        match self.get_new_block_stream_with_retry().await {
                             Ok(res) => new_blocks = res,
-                            Err(_) => {
-                                warn!("sequencer new-block restart failed; shutting down driver");
+                            Err(err) => {
+                                error!(
+                                    err.msg = %err,
+                                    err.cause = ?err,
+                                    "sequencer connection could not be re-established, shutting down driver"
+                                );
                                 break;
                             }
                         }
@@ -185,6 +194,17 @@ impl Driver {
         Ok(())
     }
 
+    async fn get_new_block_stream_with_retry(&self) -> Result<NewBlocksStream> {
+        let block_stream = tryhard::retry_fn(|| self.get_new_block_stream())
+            .retries(10)
+            .exponential_backoff(Duration::from_millis(500))
+            .max_delay(Duration::from_secs(30))
+            .await
+            .wrap_err("maximum retries for websocket connection reached")?;
+
+        Ok(block_stream)
+    }
+
     async fn get_new_block_stream(&self) -> Result<NewBlocksStream> {
         use sequencer_client::SequencerSubscriptionClientExt as _;
 
@@ -192,7 +212,11 @@ impl Driver {
             .await
             .wrap_err("failed constructing a cometbft websocket client to read off sequencer")?;
 
-        let block_stream = sequencer_client.client.subscribe_new_block_data().await?;
+        let block_stream = sequencer_client
+            .client
+            .subscribe_new_block_data()
+            .await
+            .wrap_err("failed subscribing to sequencer to receive new blocks")?;
 
         Ok(block_stream)
     }
