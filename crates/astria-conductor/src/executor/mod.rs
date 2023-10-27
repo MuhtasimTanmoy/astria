@@ -169,7 +169,7 @@ impl Executor {
                             let executed_block_result = self.execute_block(block_subset).await;
                             match executed_block_result {
                                 Ok(Some(executed_block)) => {
-                                    if let Err(e) = self.update_soft_commitment(executed_block.clone()).await {
+                                    if let Err(e) = self.update_commitment(executed_block.clone(), false).await {
                                         error!(
                                             height = height,
                                             error = ?e,
@@ -276,27 +276,25 @@ impl Executor {
         Ok(())
     }
 
-    /// Updates both firm and soft commitments.
-    async fn update_commitments(&mut self, block: Block) -> Result<()> {
-        self.update_commitment_states(block.clone(), block)
+    async fn update_commitment(&mut self, block: Block, set_firm: bool) -> Result<()> {
+        let firm = {
+            if set_firm {
+                block.clone()
+            } else {
+                self.commitment_state.firm.clone()
+            }
+        };
+        let soft = {
+            if block.number > self.commitment_state.soft.number {
+                block
+            } else {
+                self.commitment_state.soft.clone()
+            }
+        };
+
+        self.update_commitment_states(firm, soft)
             .await
             .wrap_err("executor failed to update both commitments")?;
-        Ok(())
-    }
-
-    /// Updates only firm commitment and leaves soft commitment the same.
-    async fn update_firm_commitment(&mut self, firm: Block) -> Result<()> {
-        self.update_commitment_states(firm, self.commitment_state.soft.clone())
-            .await
-            .wrap_err("executor failed to update firm commitment")?;
-        Ok(())
-    }
-
-    /// Updates only soft commitment and leaves firm commitment the same.
-    async fn update_soft_commitment(&mut self, soft: Block) -> Result<()> {
-        self.update_commitment_states(self.commitment_state.firm.clone(), soft)
-            .await
-            .wrap_err("executor failed to update soft commitment")?;
         Ok(())
     }
 
@@ -314,16 +312,8 @@ impl Executor {
             .sequencer_hash_to_execution_block
             .get(&sequencer_block_hash)
             .cloned();
-        match maybe_executed_block {
-            Some(executed_block) => {
-                // this case means block has already been executed.
-                self.update_firm_commitment(executed_block.clone())
-                    .await
-                    .wrap_err("executor failed to update firm commitment")?;
-                // remove the sequencer block hash from the map, as it's been firmly committed
-                self.sequencer_hash_to_execution_block
-                    .remove(&block.block_hash);
-            }
+        let executed_block = match maybe_executed_block {
+            Some(executed_block) => executed_block,
             None => {
                 // this means either:
                 // - we didn't receive the block from the sequencer stream, or
@@ -344,16 +334,19 @@ impl Executor {
                     return Ok(());
                 };
 
-                // when we execute a block received from da, nothing else has been executed on top
-                // of it, so we set FIRM and SOFT to this executed block
-                self.update_commitments(executed_block)
-                    .await
-                    .wrap_err("executor failed to update both commitments")?;
-                // remove the sequencer block hash from the map, as it's been firmly committed
-                self.sequencer_hash_to_execution_block
-                    .remove(&block.block_hash);
+                executed_block
             }
         };
+
+        // when we execute a block received from da, nothing else has been executed on top
+        // of it, so we set FIRM and SOFT to this executed block
+        self.update_commitment(executed_block, true)
+            .await
+            .wrap_err("executor failed to update commitment")?;
+        // remove the sequencer block hash from the map, as it's been firmly committed
+        self.sequencer_hash_to_execution_block
+            .remove(&block.block_hash);
+
         Ok(())
     }
 }
