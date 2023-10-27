@@ -276,7 +276,7 @@ impl Executor {
         Ok(())
     }
 
-    async fn update_commitment(&mut self, block: Block, set_firm: bool) -> Result<()> {
+    async fn qupdate_commitment(&mut self, block: Block, set_firm: bool) -> Result<()> {
         let firm = if set_firm {
             block.clone()
         } else {
@@ -309,30 +309,27 @@ impl Executor {
             .sequencer_hash_to_execution_block
             .get(&sequencer_block_hash)
             .cloned();
-        let executed_block = match maybe_executed_block {
-            Some(executed_block) => executed_block,
-            None => {
-                // this means either:
-                // - we didn't receive the block from the sequencer stream, or
-                // - we received it, but the sequencer block didn't contain
-                // any transactions for this rollup namespace, thus nothing was executed
-                // on receiving this block.
+        let executed_block = if let Some(executed_block) = maybe_executed_block {
+            executed_block
+        } else {
+            // this means either:
+            // - we didn't receive the block from the sequencer stream, or
+            // - we received it, but execution was skipped
 
-                // try executing the block as it hasn't been executed before
-                // execute_block will check if our namespace has txs; if so, it'll return the
-                // resulting execution block hash, otherwise None
-                let Some(executed_block) = self
-                    .execute_block(block.clone())
-                    .await
-                    .wrap_err("failed to execute block")?
-                else {
-                    // no txs for our namespace, nothing to do
-                    debug!("execute_block returned None; skipping call_update_commitment_state");
-                    return Ok(());
-                };
+            // try executing the block as it hasn't been executed before
+            // execute_block will check if our namespace has txs; if so, it'll return the
+            // resulting execution block hash, otherwise None
+            let Some(executed_block) = self
+                .execute_block(block.clone())
+                .await
+                .wrap_err("failed to execute block")?
+            else {
+                // no txs for our namespace, nothing to do
+                debug!("execute_block returned None; skipping call_update_commitment_state");
+                return Ok(());
+            };
 
-                executed_block
-            }
+            executed_block
         };
 
         // Update the commitment state with the executed block.
