@@ -277,19 +277,16 @@ impl Executor {
     }
 
     async fn update_commitment(&mut self, block: Block, set_firm: bool) -> Result<()> {
-        let firm = {
-            if set_firm {
-                block.clone()
-            } else {
-                self.commitment_state.firm.clone()
-            }
+        let firm = if set_firm {
+            block.clone()
+        } else {
+            self.commitment_state.firm.clone()
         };
-        let soft = {
-            if block.number > self.commitment_state.soft.number {
-                block
-            } else {
-                self.commitment_state.soft.clone()
-            }
+        // Soft commitment is always the latest block
+        let soft = if block.number > self.commitment_state.soft.number {
+            block
+        } else {
+            self.commitment_state.soft.clone()
         };
 
         self.update_commitment_states(firm, soft)
@@ -338,8 +335,7 @@ impl Executor {
             }
         };
 
-        // when we execute a block received from da, nothing else has been executed on top
-        // of it, so we set FIRM and SOFT to this executed block
+        // Update the commitment state with the executed block.
         self.update_commitment(executed_block, true)
             .await
             .wrap_err("executor failed to update commitment")?;
