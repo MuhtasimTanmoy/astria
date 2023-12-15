@@ -4,7 +4,6 @@
 //! ```no_run
 //! astria_telemetry::configure()
 //!     .otel_endpoint("http://otel-collector.monitoring:4317")
-//!     .set_stdout_writer(std::io::stdout)
 //!     .filter_directives("info")
 //!     .try_init()
 //!     .expect("must be able to initialize telemetry");
@@ -24,6 +23,7 @@ use opentelemetry_sdk::{
     runtime::Tokio,
     trace::TracerProvider,
 };
+use opentelemetry_stdout::SpanExporter;
 use tracing_subscriber::{
     filter::{
         LevelFilter,
@@ -87,40 +87,9 @@ impl Stdout {
     }
 }
 
-struct BoxMakeWriter(Box<dyn for<'a> MakeWriter<'a>>);
-impl BoxMakeWriter {
-    fn new<M>(make_writer: M) -> Self
-    where
-        M: for<'a> MakeWriter<'a> + 'static,
-    {
-        Self(Box::new(make_writer))
-    }
-}
-
-pub trait MakeWriter<'a> {
-    fn make_writer(&'a self) -> Box<dyn std::io::Write + Send + Sync + 'static>;
-}
-
-impl<'a> MakeWriter<'a> for BoxMakeWriter {
-    fn make_writer(&'a self) -> Box<dyn std::io::Write + Send + Sync + 'static> {
-        self.0.make_writer()
-    }
-}
-
-impl<'a, F, W> MakeWriter<'a> for F
-where
-    F: Fn() -> W,
-    W: std::io::Write + Send + Sync + 'static,
-{
-    fn make_writer(&'a self) -> Box<dyn std::io::Write + Send + Sync + 'static> {
-        Box::new((self)())
-    }
-}
-
 pub struct Config {
     filter_directives: String,
     stdout: Stdout,
-    stdout_writer: BoxMakeWriter,
     otel_endpoint: Option<String>,
 }
 
@@ -129,7 +98,6 @@ impl Config {
         Self {
             filter_directives: String::new(),
             stdout: Stdout::default(),
-            stdout_writer: BoxMakeWriter::new(std::io::stdout),
             otel_endpoint: None,
         }
     }
@@ -157,16 +125,6 @@ impl Config {
         }
     }
 
-    pub fn set_stdout_writer<M>(self, make_writer: M) -> Self
-    where
-        M: for<'a> MakeWriter<'a> + 'static,
-    {
-        Self {
-            stdout_writer: BoxMakeWriter::new(make_writer),
-            ..self
-        }
-    }
-
     pub fn otel_endpoint(self, otel_endpoint: &str) -> Self {
         Self {
             otel_endpoint: Some(otel_endpoint.to_string()),
@@ -179,7 +137,6 @@ impl Config {
             filter_directives,
             otel_endpoint,
             stdout,
-            stdout_writer,
         } = self;
 
         let env_filter = {
@@ -204,11 +161,7 @@ impl Config {
         }
 
         if stdout.is_always() || (stdout.is_if_tty() && std::io::stdout().is_terminal()) {
-            let writer = stdout_writer.make_writer();
-            let stdout_exporter = opentelemetry_stdout::SpanExporter::builder()
-                .with_writer(writer)
-                .build();
-            tracer_provider = tracer_provider.with_simple_exporter(stdout_exporter);
+            tracer_provider = tracer_provider.with_simple_exporter(SpanExporter::default());
         }
         let tracer_provider = tracer_provider.build();
 
