@@ -9,10 +9,7 @@
 //!     .expect("must be able to initialize telemetry");
 //! tracing::info!("telemetry initialized");
 //! ```
-use std::{
-    io::IsTerminal as _,
-    time::Duration,
-};
+use std::io::IsTerminal as _;
 
 use opentelemetry::{
     global,
@@ -65,6 +62,7 @@ enum ErrorKind {
     InitSubscriber(#[source] TryInitError),
 }
 
+#[must_use = "the otel config must be initialized to be useful"]
 pub fn configure() -> Config {
     Config::new()
 }
@@ -94,6 +92,7 @@ pub struct Config {
 }
 
 impl Config {
+    #[must_use = "telemetry must be initialized to be useful"]
     fn new() -> Self {
         Self {
             filter_directives: String::new(),
@@ -104,6 +103,7 @@ impl Config {
 }
 
 impl Config {
+    #[must_use = "telemetry must be initialized to be useful"]
     pub fn filter_directives(self, filter_directives: &str) -> Self {
         Self {
             filter_directives: filter_directives.to_string(),
@@ -111,6 +111,7 @@ impl Config {
         }
     }
 
+    #[must_use = "telemetry must be initialized to be useful"]
     pub fn stdout_always(self) -> Self {
         Self {
             stdout: Stdout::Always,
@@ -118,6 +119,7 @@ impl Config {
         }
     }
 
+    #[must_use = "telemetry must be initialized to be useful"]
     pub fn stdout_never(self) -> Self {
         Self {
             stdout: Stdout::Never,
@@ -125,6 +127,7 @@ impl Config {
         }
     }
 
+    #[must_use = "telemetry must be initialized to be useful"]
     pub fn otel_endpoint(self, otel_endpoint: &str) -> Self {
         Self {
             otel_endpoint: Some(otel_endpoint.to_string()),
@@ -132,6 +135,11 @@ impl Config {
         }
     }
 
+    /// Initialize telemetry, consuming the config.
+    ///
+    /// # Errors
+    /// Fails if the filter directives could not be parsed, if communication with the OTLP
+    /// endpoint failed, or if the global tracing subscriber could not be installed.
     pub fn try_init(self) -> Result<(), Error> {
         let Self {
             filter_directives,
@@ -152,8 +160,6 @@ impl Config {
                 .tonic()
                 // XXX: will get overriden by env var OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
                 .with_endpoint(otel_endpoint)
-                // XXX: will get overriden by env var OTEL_EXPORTER_OTLP_TRACES_TIMEOUT
-                .with_timeout(Duration::from_secs(3))
                 .build_span_exporter()
                 .map_err(Error::otlp)?;
 
