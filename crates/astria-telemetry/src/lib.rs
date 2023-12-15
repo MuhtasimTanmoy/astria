@@ -1,11 +1,13 @@
 //! Initialize telemetry in all astria services.
 //!
 //! # Examples
-//! ```
-//! if let Err(err) = astria_telemetry::init(std::io::stdout, "info") {
-//!     eprintln!("failed to initialize telemetry: {err:?}");
-//!     std::process::exit(1);
-//! }
+//! ```no_run
+//! astria_telemetry::configure()
+//!     .otel_endpoint("http://otel-collector.monitoring:4317")
+//!     .set_stdout_writer(std::io::stdout)
+//!     .filter_directives("info")
+//!     .try_init()
+//!     .expect("must be able to initialize telemetry");
 //! tracing::info!("telemetry initialized");
 //! ```
 use std::{
