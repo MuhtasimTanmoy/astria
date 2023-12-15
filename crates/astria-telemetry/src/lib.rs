@@ -8,13 +8,30 @@
 //! }
 //! tracing::info!("telemetry initialized");
 //! ```
+use std::{
+    io::IsTerminal as _,
+    time::Duration,
+};
+
+use opentelemetry::{
+    global,
+    trace::TracerProvider as _,
+};
+use opentelemetry_otlp::WithExportConfig as _;
+use opentelemetry_sdk::{
+    runtime::Tokio,
+    trace::TracerProvider,
+};
 use tracing_subscriber::{
     filter::{
         LevelFilter,
         ParseError,
     },
     layer::SubscriberExt as _,
-    util::TryInitError,
+    util::{
+        SubscriberInitExt as _,
+        TryInitError,
+    },
     EnvFilter,
 };
 
@@ -155,20 +172,7 @@ impl Config {
         }
     }
 
-    pub fn init(self) -> Result<(), Error> {
-        use std::io::IsTerminal as _;
-
-        use opentelemetry::{
-            global,
-            trace::TracerProvider as _,
-        };
-        use opentelemetry_otlp::WithExportConfig as _;
-        use opentelemetry_sdk::{
-            runtime::Tokio,
-            trace::TracerProvider,
-        };
-        use tracing_subscriber::util::SubscriberInitExt as _;
-
+    pub fn try_init(self) -> Result<(), Error> {
         let Self {
             filter_directives,
             otel_endpoint,
@@ -187,7 +191,10 @@ impl Config {
         if let Some(otel_endpoint) = otel_endpoint {
             let otel_exporter = opentelemetry_otlp::new_exporter()
                 .tonic()
+                // XXX: will get overriden by env var OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
                 .with_endpoint(otel_endpoint)
+                // XXX: will get overriden by env var OTEL_EXPORTER_OTLP_TRACES_TIMEOUT
+                .with_timeout(Duration::from_secs(3))
                 .build_span_exporter()
                 .map_err(Error::otlp)?;
 

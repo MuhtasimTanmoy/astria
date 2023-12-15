@@ -4,6 +4,7 @@ use astria_sequencer::{
     Config,
     Sequencer,
 };
+use eyre::WrapErr as _;
 use tracing::info;
 
 // Following the BSD convention for failing to read config
@@ -19,7 +20,15 @@ async fn main() -> ExitCode {
             return ExitCode::from(EX_CONFIG);
         }
     };
-    telemetry::init(std::io::stdout, &config.log).expect("failed to initialize telemetry");
+    if let Err(e) = telemetry::configure()
+        .otel_endpoint("http://otel-collector.monitoring:4317")
+        .filter_directives(&config.log)
+        .try_init()
+        .wrap_err("failed to setup telemetry")
+    {
+        eprintln!("initializing sequencer failed:\n{e:?}");
+        return ExitCode::FAILURE;
+    }
     info!(
         config = serde_json::to_string(&config).expect("serializing to a string cannot fail"),
         "initializing sequencer"

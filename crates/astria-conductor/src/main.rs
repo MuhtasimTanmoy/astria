@@ -4,6 +4,7 @@ use astria_conductor::{
     Conductor,
     Config,
 };
+use color_eyre::eyre::WrapErr as _;
 use tracing::{
     error,
     info,
@@ -24,14 +25,16 @@ async fn main() -> ExitCode {
         }
         Ok(cfg) => cfg,
     };
-    if let Err(err) = telemetry::init(std::io::stdout, &cfg.log) {
-        eprintln!(
-            "failed initializing config with filter directive `{log}`\n{err:?}",
-            log = cfg.log,
-            err = err,
-        );
+
+    if let Err(e) = telemetry::configure()
+        .otel_endpoint("http://otel-collector.monitoring:4317")
+        .filter_directives(&cfg.log)
+        .try_init()
+        .wrap_err("failed to setup telemetry")
+    {
+        eprintln!("initializing sequencer failed:\n{e:?}");
         return ExitCode::FAILURE;
-    };
+    }
 
     info!(
         config = serde_json::to_string(&cfg).expect("serializing to a string cannot fail"),

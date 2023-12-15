@@ -43,9 +43,13 @@ use wiremock::{
 static TELEMETRY: Lazy<()> = Lazy::new(|| {
     if std::env::var_os("TEST_LOG").is_some() {
         let filter_directives = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into());
-        telemetry::init(std::io::stdout, &filter_directives).unwrap();
+        telemetry::configure()
+            .stdout_always()
+            .filter_directives(&filter_directives)
+            .try_init()
+            .unwrap()
     } else {
-        telemetry::init(std::io::sink, "").unwrap();
+        telemetry::configure().stdout_never().try_init().unwrap()
     }
 });
 
