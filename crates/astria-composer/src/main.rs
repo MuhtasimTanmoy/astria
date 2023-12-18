@@ -25,7 +25,7 @@ async fn main() -> ExitCode {
         .try_init()
         .wrap_err("failed to setup telemetry")
     {
-        eprintln!("initializing sequencer failed:\n{e:?}");
+        eprintln!("initializing composer failed:\n{e:?}");
         return ExitCode::FAILURE;
     }
 

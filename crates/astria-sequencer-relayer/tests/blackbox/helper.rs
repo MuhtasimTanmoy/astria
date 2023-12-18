@@ -44,12 +44,17 @@ static TELEMETRY: Lazy<()> = Lazy::new(|| {
     if std::env::var_os("TEST_LOG").is_some() {
         let filter_directives = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into());
         telemetry::configure()
-            .stdout_always()
+            .no_otel()
+            .stdout_writer(std::io::stdout)
             .filter_directives(&filter_directives)
             .try_init()
             .unwrap()
     } else {
-        telemetry::configure().stdout_never().try_init().unwrap()
+        telemetry::configure()
+            .no_otel()
+            .stdout_writer(std::io::sink)
+            .try_init()
+            .unwrap()
     }
 });
 
@@ -189,6 +194,8 @@ pub async fn spawn_sequencer_relayer(
         validator_key_file: Some(keyfile.path().to_string_lossy().to_string()),
         rpc_port: 0,
         log: String::new(),
+        force_stdout: false,
+        no_otel: false,
     };
 
     info!(config = serde_json::to_string(&config).unwrap());

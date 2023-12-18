@@ -13,7 +13,7 @@ const EX_CONFIG: u8 = 78;
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    let config: Config = match config::get() {
+    let cfg: Config = match config::get() {
         Ok(cfg) => cfg,
         Err(e) => {
             eprintln!("failed to read configuration:\n{e:?}");
@@ -21,8 +21,9 @@ async fn main() -> ExitCode {
         }
     };
     if let Err(e) = telemetry::configure()
-        .otel_endpoint("http://otel-collector.monitoring:4317")
-        .filter_directives(&config.log)
+        .set_no_otel(cfg.no_otel)
+        .set_force_stdout(cfg.force_stdout)
+        .filter_directives(&cfg.log)
         .try_init()
         .wrap_err("failed to setup telemetry")
     {
@@ -30,7 +31,7 @@ async fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
     info!(
-        config = serde_json::to_string(&config).expect("serializing to a string cannot fail"),
+        config = serde_json::to_string(&cfg).expect("serializing to a string cannot fail"),
         "initializing sequencer"
     );
 
@@ -48,7 +49,7 @@ async fn main() -> ExitCode {
         });
     }
 
-    Sequencer::run_until_stopped(config)
+    Sequencer::run_until_stopped(cfg)
         .await
         .expect("failed to run sequencer");
 

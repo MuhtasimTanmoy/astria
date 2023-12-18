@@ -13,7 +13,8 @@ async fn main() -> ExitCode {
     let cfg: Config = config::get().expect("failed to read configuration");
 
     if let Err(e) = telemetry::configure()
-        .otel_endpoint("http://otel-collector.monitoring:4317")
+        .set_no_otel(cfg.no_otel)
+        .set_force_stdout(cfg.force_stdout)
         .filter_directives(&cfg.log)
         .try_init()
         .wrap_err("failed to setup telemetry")
