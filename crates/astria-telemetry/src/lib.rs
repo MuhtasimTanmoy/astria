@@ -195,7 +195,7 @@ impl Config {
                 SpanExporter::builder()
                     .with_writer(stdout_writer.make_writer())
                     .build(),
-            )
+            );
         }
         let tracer_provider = tracer_provider.build();
 
