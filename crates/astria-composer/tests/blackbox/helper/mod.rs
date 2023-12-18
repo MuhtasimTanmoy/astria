@@ -21,12 +21,17 @@ static TELEMETRY: Lazy<()> = Lazy::new(|| {
     if std::env::var_os("TEST_LOG").is_some() {
         let filter_directives = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into());
         telemetry::configure()
-            .stdout_always()
+            .no_otel()
+            .stdout_writer(std::io::stdout)
             .filter_directives(&filter_directives)
             .try_init()
             .unwrap()
     } else {
-        telemetry::configure().stdout_never().try_init().unwrap()
+        telemetry::configure()
+            .no_otel()
+            .stdout_writer(std::io::sink)
+            .try_init()
+            .unwrap()
     }
 });
 
@@ -68,6 +73,8 @@ pub async fn spawn_composer(rollup_ids: &[&str]) -> TestComposer {
         private_key: "2bd806c97f0e00af1a1fc3328fa763a9269723c8db8fac4f93af71db186d6e90"
             .to_string()
             .into(),
+        no_otel: false,
+        force_stdout: false,
     };
     let (composer_addr, composer) = {
         let composer = Composer::from_config(&config).unwrap();

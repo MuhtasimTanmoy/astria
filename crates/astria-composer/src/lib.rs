@@ -25,7 +25,6 @@
 //! eprintln!("config:\n{cfg_ser}");
 //!
 //! telemetry::configure()
-//!     .otel_endpoint("http://otel-collector.monitoring:4317")
 //!     .filter_directives(&cfg.log)
 //!     .try_init()
 //!     .expect("failed to setup telemetry");

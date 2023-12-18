@@ -3,7 +3,6 @@
 //! # Examples
 //! ```no_run
 //! astria_telemetry::configure()
-//!     .otel_endpoint("http://otel-collector.monitoring:4317")
 //!     .filter_directives("info")
 //!     .try_init()
 //!     .expect("must be able to initialize telemetry");
@@ -15,7 +14,6 @@ use opentelemetry::{
     global,
     trace::TracerProvider as _,
 };
-use opentelemetry_otlp::WithExportConfig as _;
 use opentelemetry_sdk::{
     runtime::Tokio,
     trace::TracerProvider,
@@ -66,29 +64,42 @@ enum ErrorKind {
 pub fn configure() -> Config {
     Config::new()
 }
+struct BoxedMakeWriter(Box<dyn MakeWriter + Send + Sync + 'static>);
 
-#[derive(Copy, Clone, Debug, Default)]
-enum Stdout {
-    Always,
-    #[default]
-    IfTty,
-    Never,
+impl BoxedMakeWriter {
+    fn new<M>(make_writer: M) -> Self
+    where
+        M: MakeWriter + Send + Sync + 'static,
+    {
+        Self(Box::new(make_writer))
+    }
 }
 
-impl Stdout {
-    fn is_always(self) -> bool {
-        matches!(self, Self::Always)
-    }
+pub trait MakeWriter {
+    fn make_writer(&self) -> Box<dyn std::io::Write + Send + Sync + 'static>;
+}
 
-    fn is_if_tty(self) -> bool {
-        matches!(self, Self::IfTty)
+impl<F, W> MakeWriter for F
+where
+    F: Fn() -> W,
+    W: std::io::Write + Send + Sync + 'static,
+{
+    fn make_writer(&self) -> Box<dyn std::io::Write + Send + Sync + 'static> {
+        Box::new((self)())
+    }
+}
+
+impl MakeWriter for BoxedMakeWriter {
+    fn make_writer(&self) -> Box<dyn std::io::Write + Send + Sync + 'static> {
+        self.0.make_writer()
     }
 }
 
 pub struct Config {
     filter_directives: String,
-    stdout: Stdout,
-    otel_endpoint: Option<String>,
+    force_stdout: bool,
+    no_otel: bool,
+    stdout_writer: BoxedMakeWriter,
 }
 
 impl Config {
@@ -96,8 +107,9 @@ impl Config {
     fn new() -> Self {
         Self {
             filter_directives: String::new(),
-            stdout: Stdout::default(),
-            otel_endpoint: None,
+            force_stdout: false,
+            no_otel: false,
+            stdout_writer: BoxedMakeWriter::new(std::io::stdout),
         }
     }
 }
@@ -112,25 +124,38 @@ impl Config {
     }
 
     #[must_use = "telemetry must be initialized to be useful"]
-    pub fn stdout_always(self) -> Self {
+    pub fn force_stdout(self) -> Self {
+        self.set_force_stdout(true)
+    }
+
+    #[must_use = "telemetry must be initialized to be useful"]
+    pub fn set_force_stdout(self, force_stdout: bool) -> Self {
         Self {
-            stdout: Stdout::Always,
+            force_stdout,
             ..self
         }
     }
 
     #[must_use = "telemetry must be initialized to be useful"]
-    pub fn stdout_never(self) -> Self {
+    pub fn no_otel(self) -> Self {
+        self.set_no_otel(true)
+    }
+
+    #[must_use = "telemetry must be initialized to be useful"]
+    pub fn set_no_otel(self, no_otel: bool) -> Self {
         Self {
-            stdout: Stdout::Never,
+            no_otel,
             ..self
         }
     }
 
     #[must_use = "telemetry must be initialized to be useful"]
-    pub fn otel_endpoint(self, otel_endpoint: &str) -> Self {
+    pub fn stdout_writer<M>(self, stdout_writer: M) -> Self
+    where
+        M: MakeWriter + Send + Sync + 'static,
+    {
         Self {
-            otel_endpoint: Some(otel_endpoint.to_string()),
+            stdout_writer: BoxedMakeWriter::new(stdout_writer),
             ..self
         }
     }
@@ -143,8 +168,9 @@ impl Config {
     pub fn try_init(self) -> Result<(), Error> {
         let Self {
             filter_directives,
-            otel_endpoint,
-            stdout,
+            force_stdout,
+            no_otel,
+            stdout_writer,
         } = self;
 
         let env_filter = {
@@ -155,19 +181,21 @@ impl Config {
         };
 
         let mut tracer_provider = TracerProvider::builder();
-        if let Some(otel_endpoint) = otel_endpoint {
+        if !no_otel {
+            // XXX: the endpoint is set via by the env var OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
             let otel_exporter = opentelemetry_otlp::new_exporter()
                 .tonic()
-                // XXX: will get overriden by env var OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
-                .with_endpoint(otel_endpoint)
                 .build_span_exporter()
                 .map_err(Error::otlp)?;
-
             tracer_provider = tracer_provider.with_batch_exporter(otel_exporter, Tokio);
         }
 
-        if stdout.is_always() || (stdout.is_if_tty() && std::io::stdout().is_terminal()) {
-            tracer_provider = tracer_provider.with_simple_exporter(SpanExporter::default());
+        if force_stdout || std::io::stdout().is_terminal() {
+            tracer_provider = tracer_provider.with_simple_exporter(
+                SpanExporter::builder()
+                    .with_writer(stdout_writer.make_writer())
+                    .build(),
+            )
         }
         let tracer_provider = tracer_provider.build();
 
