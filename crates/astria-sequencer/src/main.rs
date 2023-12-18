@@ -36,7 +36,7 @@ async fn main() -> ExitCode {
     );
 
     #[cfg(feature = "mint")]
-    if config.enable_mint {
+    if cfg.enable_mint {
         tokio::spawn(async {
             let duration = std::time::Duration::from_secs(5);
             loop {
