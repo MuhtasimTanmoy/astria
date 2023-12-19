@@ -696,7 +696,6 @@ dependencies = [
  "cnidarium",
  "cnidarium-component",
  "ed25519-consensus",
- "eyre",
  "futures",
  "hex",
  "ibc-proto",
