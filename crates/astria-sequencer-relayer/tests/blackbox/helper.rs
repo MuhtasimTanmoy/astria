@@ -48,13 +48,13 @@ static TELEMETRY: Lazy<()> = Lazy::new(|| {
             .stdout_writer(std::io::stdout)
             .filter_directives(&filter_directives)
             .try_init()
-            .unwrap()
+            .unwrap();
     } else {
         telemetry::configure()
             .no_otel()
             .stdout_writer(std::io::sink)
             .try_init()
-            .unwrap()
+            .unwrap();
     }
 });
 
