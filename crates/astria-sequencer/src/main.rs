@@ -1,10 +1,10 @@
 use std::process::ExitCode;
 
+use anyhow::Context as _;
 use astria_sequencer::{
     Config,
     Sequencer,
 };
-use eyre::WrapErr as _;
 use tracing::info;
 
 // Following the BSD convention for failing to read config
@@ -25,7 +25,7 @@ async fn main() -> ExitCode {
         .set_force_stdout(cfg.force_stdout)
         .filter_directives(&cfg.log)
         .try_init()
-        .wrap_err("failed to setup telemetry")
+        .context("failed to setup telemetry")
     {
         eprintln!("initializing sequencer failed:\n{e:?}");
         return ExitCode::FAILURE;

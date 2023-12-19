@@ -38,7 +38,6 @@ tendermint-proto = { workspace = true }
 tendermint = { workspace = true }
 tokio = { workspace = true, features = ["rt", "tracing"] }
 tracing = { workspace = true }
-eyre.workspace = true
 
 ibc-proto = { version = "0.39.0", features = ["server"] }
 tonic = "0.10"
