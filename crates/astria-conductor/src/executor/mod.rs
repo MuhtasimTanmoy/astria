@@ -400,10 +400,10 @@ impl Executor {
             return Ok(execution_block.clone());
         }
 
-        let prev_block_hash = self.commitment_state.soft().hash();
+        let prev_block_hash = self.commitment_state.soft().hash().clone();
         info!(
             sequencer_block_height = block.header.height.value(),
-            parent_block_hash = hex::encode(prev_block_hash),
+            parent_block_hash = %telemetry::display::hex(&prev_block_hash),
             "executing block with given parent block",
         );
 
@@ -416,6 +416,7 @@ impl Executor {
         } else {
             block.transactions
         };
+        let rollup_transactions: Vec<_> = rollup_transactions.into_iter().map(Into::into).collect();
 
         let tx_count = rollup_transactions.len();
         let executed_block = self

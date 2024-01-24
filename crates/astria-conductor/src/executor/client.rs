@@ -9,6 +9,7 @@ use astria_core::{
     },
     Protobuf as _,
 };
+use bytes::Bytes;
 use color_eyre::eyre::{
     self,
     WrapErr as _,
@@ -39,12 +40,12 @@ impl Client {
     /// * `timestamp` - Optional timestamp of the sequencer block
     pub(super) async fn execute_block(
         &mut self,
-        prev_block_hash: [u8; 32],
-        transactions: Vec<Vec<u8>>,
+        prev_block_hash: Bytes,
+        transactions: Vec<Bytes>,
         timestamp: Timestamp,
     ) -> eyre::Result<Block> {
         let request = raw::ExecuteBlockRequest {
-            prev_block_hash: prev_block_hash.to_vec(),
+            prev_block_hash,
             transactions,
             timestamp: Some(timestamp),
         };
