@@ -289,7 +289,7 @@ async fn execute_unexecuted_da_block_with_no_transactions() {
     let mut mock: MockEnvironment = start_mock(None).await;
     let block = get_test_block_subset();
     // using firm hash here as da blocks are executed on top of the firm commitment
-    let expected_execution_state = hash(&mock.executor.commitment_state.firm().hash());
+    let expected_execution_state = hash(mock.executor.commitment_state.firm().hash());
 
     mock.executor
         .execute_and_finalize_blocks_from_celestia(vec![block])
