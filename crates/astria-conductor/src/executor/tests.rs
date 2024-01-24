@@ -21,6 +21,7 @@ use astria_core::{
     },
     sequencer::v1alpha1::test_utils::make_cometbft_block,
 };
+use bytes::Bytes;
 use ethers::{
     prelude::*,
     utils::AnvilInstance,
@@ -71,8 +72,8 @@ impl MockExecutionServer {
 fn new_basic_block() -> Block {
     Block {
         number: 0,
-        hash: vec![42u8; 32],
-        parent_block_hash: vec![42u8; 32],
+        hash: Bytes::from(vec![42u8; 32]),
+        parent_block_hash: Bytes::from(vec![42u8; 32]),
         timestamp: Some(std::time::SystemTime::now().into()),
     }
 }
@@ -131,14 +132,22 @@ impl ExecutionService for ExecutionServiceImpl {
     }
 }
 
-fn get_expected_execution_hash(parent_block_hash: &[u8], transactions: &[Vec<u8>]) -> Vec<u8> {
-    hash(&[parent_block_hash, &transactions.concat()].concat())
+fn get_expected_execution_hash(
+    parent_block_hash: &Bytes,
+    transactions: &[impl AsRef<[u8]>],
+) -> Bytes {
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(parent_block_hash);
+    for tx in transactions {
+        hasher.update(tx);
+    }
+    Bytes::copy_from_slice(&hasher.finalize())
 }
 
-fn hash(s: &[u8]) -> Vec<u8> {
+fn hash(s: &[u8]) -> Bytes {
     let mut hasher = sha2::Sha256::new();
     hasher.update(s);
-    hasher.finalize().to_vec()
+    Bytes::copy_from_slice(&hasher.finalize())
 }
 
 fn get_test_block_subset() -> SequencerBlockSubset {
@@ -212,11 +221,18 @@ async fn execute_sequencer_block_without_txs() {
     let mut mock = start_mock(None).await;
 
     // using soft hash here as sequencer blocks are executed on top of the soft commitment
+    let empty: &[&[u8]] = &[];
     let expected_exection_hash =
-        get_expected_execution_hash(&mock.executor.commitment_state.soft().hash(), &[]);
+        get_expected_execution_hash(mock.executor.commitment_state.soft().hash(), empty);
     let block = get_test_block_subset();
 
-    let execution_block_hash = mock.executor.execute_block(block).await.unwrap().hash();
+    let execution_block_hash = mock
+        .executor
+        .execute_block(block)
+        .await
+        .unwrap()
+        .hash()
+        .clone();
     assert_eq!(expected_exection_hash, execution_block_hash);
 }
 
@@ -228,10 +244,16 @@ async fn execute_sequencer_block_with_txs() {
     block.transactions.push(b"test_transaction".to_vec());
 
     let expected_exection_hash = get_expected_execution_hash(
-        &mock.executor.commitment_state.soft().hash(),
+        mock.executor.commitment_state.soft().hash(),
         &block.transactions,
     );
-    let execution_block_hash = mock.executor.execute_block(block).await.unwrap().hash();
+    let execution_block_hash = mock
+        .executor
+        .execute_block(block)
+        .await
+        .unwrap()
+        .hash()
+        .clone();
     assert_eq!(expected_exection_hash, execution_block_hash);
 }
 
@@ -244,7 +266,7 @@ async fn execute_unexecuted_da_block_with_transactions() {
 
     // using firm hash here as da blocks are executed on top of the firm commitment
     let expected_exection_hash = get_expected_execution_hash(
-        &mock.executor.commitment_state.firm().hash(),
+        mock.executor.commitment_state.firm().hash(),
         &block.transactions,
     );
 
@@ -287,7 +309,7 @@ async fn execute_unexecuted_da_block_with_no_transactions() {
 async fn empty_message_from_data_availability_is_dropped() {
     let mut mock = start_mock(None).await;
     // using firm hash here as da blocks are executed on top of the firm commitment
-    let expected_execution_state = mock.executor.commitment_state.firm().hash();
+    let expected_execution_state = mock.executor.commitment_state.firm().hash().clone();
 
     mock.executor
         .execute_and_finalize_blocks_from_celestia(vec![])
@@ -381,13 +403,17 @@ mod optimism_tests {
 
         // calculate the expected mock execution hash, which includes the block txs,
         // thus confirming the deposit tx was executed
-        let expected_exection_hash = get_expected_execution_hash(
-            &mock.executor.commitment_state.soft().hash(),
-            &deposit_txs,
-        );
+        let expected_exection_hash =
+            get_expected_execution_hash(mock.executor.commitment_state.soft().hash(), &deposit_txs);
         let block = get_test_block_subset();
 
-        let execution_block_hash = mock.executor.execute_block(block).await.unwrap().hash();
+        let execution_block_hash = mock
+            .executor
+            .execute_block(block)
+            .await
+            .unwrap()
+            .hash()
+            .clone();
         assert_eq!(expected_exection_hash, execution_block_hash);
     }
 }
